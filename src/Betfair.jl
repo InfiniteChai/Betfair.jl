@@ -4,6 +4,7 @@ using HTTP
 using JSON
 import Dates
 using Pkg.TOML
+import Memoize
 
 abstract type API end
 struct BettingAPI <: API end
@@ -58,7 +59,7 @@ getAccountStatement(s::Session) = call(s, AccountsAPI, "getAccountStatement", Di
 # Some specific overrides to standard terminology for
 const eventTypeOverrides = Dict{String, String}("Football" => "Soccer")
 
-function listEventTypes(s::Session)
+Memoize.@memoize function listEventTypes(s::Session)
     res = call(s, BettingAPI, "listEventTypes", Dict{String,Any}("filter" => Dict{String,Any}()))
     types = Dict(map(x->x["eventType"]["name"], res) .=> map(x->x["eventType"]["id"], res))
     for (k,v) in eventTypeOverrides
@@ -73,7 +74,8 @@ function extendedEventType(event)
 end
 
 function listEvents(s::Session, event::String)
-    res = call(s, BettingAPI, "listEvents", Dict{String,Any}("filter" => Dict{String,Any}("eventTypeIds" => ["1"])))
+    eventtypes = listEventTypes(s)    
+    res = call(s, BettingAPI, "listEvents", Dict{String,Any}("filter" => Dict{String,Any}("eventTypeIds" => [eventtypes[event]])))
     events = Dict(map(x->x["event"]["id"], res) .=> map(x->merge(extendedEventType(x["event"]),x["event"]), res))
     return events
 end
