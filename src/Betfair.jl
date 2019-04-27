@@ -5,6 +5,7 @@ using JSON
 import Dates
 using Pkg.TOML
 import Memoize
+import Libz
 
 abstract type API end
 struct BettingAPI <: API end
@@ -12,7 +13,7 @@ full_method(::Type{BettingAPI}, method::String) = "SportsAPING/v1.0/$(method)"
 endpoint(::Type{BettingAPI}) = "https://api.betfair.com/exchange/betting/json-rpc/v1"
 
 struct AccountsAPI <: API end
-full_method(::Type{AccountsAPI}, method::String) = "AccountsAPING/v1.0/$(method)"
+full_method(::Type{AccountsAPI}, method::String) = "AccountAPING/v1.0/$(method)"
 endpoint(::Type{AccountsAPI}) = "https://api.betfair.com/exchange/account/json-rpc/v1"
 
 mutable struct Session
@@ -24,7 +25,7 @@ mutable struct Session
 end
 
 function headers(s::Session; accept = "application/json", content = "application/json") :: Dict{String, String}
-    headers = Dict("Accept" => accept, "Content-Type" => content, "X-Application" => s.appid)
+    headers = Dict("Accept" => accept, "Content-Type" => content, "X-Application" => s.appid, "Accept-Encoding" => "gzip, deflate")
     if s.token !== nothing
         headers["X-Authentication"] = s.token
     end
@@ -54,7 +55,7 @@ function call(s::Session, api::Type{T}, method::String, params::Dict{String, Any
     msg = Dict("jsonrpc" => "2.0", "method" => full_method(api, method), "id" => s.msgid, "params" => params)
     s.msgid += 1
     result = HTTP.request("POST", endpoint(api); headers=h, body=JSON.json(msg))
-    body = JSON.Parser.parse(String(result.body))
+    body = result.body |> ZlibInflateInputStream |> readline |> JSON.Parser.parse
     !haskey(body, "error") || throw(error("Failed to call $(method) with code $(body["error"]["code"])"))
     return body["result"]
 end
