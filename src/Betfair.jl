@@ -41,6 +41,13 @@ function connect(s::Session, username::String, password::String) :: String
     s.token = body["token"]
 end
 
+function keepalive(s::Session)
+    h = headers(s)
+    result = HTTP.request("POST", "https://identitysso.betfair.com/api/keepAlive"; headers=h)
+    body = JSON.Parser.parse(String(result.body))
+    body["status"] == "SUCCESS" || throw(error("Failed to keepAlive Session $(s["appid"])"))
+end
+
 function call(s::Session, api::Type{T}, method::String, params::Dict{String, Any}) where {T <: API}
     s.token !== nothing || throw(error("Login before making a call"))
     h = headers(s)
@@ -74,7 +81,7 @@ function extendedEventType(event)
 end
 
 function listEvents(s::Session, event::String)
-    eventtypes = listEventTypes(s)    
+    eventtypes = listEventTypes(s)
     res = call(s, BettingAPI, "listEvents", Dict{String,Any}("filter" => Dict{String,Any}("eventTypeIds" => [eventtypes[event]])))
     events = Dict(map(x->x["event"]["id"], res) .=> map(x->merge(extendedEventType(x["event"]),x["event"]), res))
     return events
