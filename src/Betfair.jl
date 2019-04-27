@@ -65,7 +65,7 @@ function listEventTypes(s::Session)
         types[k] = types[v]
     end
 
-    return events
+    return types
 end
 
 function extendedEventType(event)
