@@ -92,8 +92,8 @@ mutable struct FootballEvent <: Event
     name::String
     id::String
     _markets::Dict{String,Market{FootballEvent}}
-
-    FootballEvent(name::String, id::String) = new(name, id, Dict{String,Market{FootballEvent}}())
+    starttime::Dates.DateTime
+    FootballEvent(name::String, id::String, starttime::Dates.DateTime) = new(name, id, Dict{String,Market{FootballEvent}}(), starttime)
 end
 
 @enum Side begin
@@ -115,44 +115,15 @@ end
 bestback(qs::QuoteStack) :: Union{Nothing,Quote} = length(qs.backdepth) > 0 ? qs.backdepth[1] : nothing
 bestlay(qs::QuoteStack) :: Union{Nothing,Quote} = length(qs.laydepth) > 0 ? qs.laydepth[1] : nothing
 
-fillablequote(qs::QuoteStack, side::Side, size::Float64; )
-
-@enum FillMethod begin
-    Average = 1
-    Full = 2
-end
-
-function fillablebackquote(qs::QuoteStack, size::Float64; method::FillMethod = Average) :: Tuple{Quote, Bool}
-    quotesize = 0.0
-    totalprice = 0.0
-
-    for qt in qs.backdepth
-        Match.@match Int(method) begin
-            Int(Average)         => (fill = min(qt.size,size - quotesize); quotesize += fill; totalprice += fill * qt.price)
-            Int(Full)            => quotesize == 0.0 && qt.size >= size ? (totalprice = qt.price * qt.size; quotesize = qt.size) : nothing
-            _                    => error("Unknown method $(method)")
-        end
+Memoize.@memoize function listeventtypes(s::Session)
+    res = call(s, BettingAPI, "listEventTypes", Dict{String,Any}("filter" => Dict{String,Any}()))
+    types = Dict(map(x->x["eventType"]["name"], res) .=> map(x->x["eventType"]["id"], res))
+    for (k,v) in EVENT_TYPE_OVERRIDES
+        types[k] = types[v]
     end
-    return (Quote(Back, totalprice / quotesize, quotesize), quotesize == size)
+
+    return types
 end
-
-function fillablelayquote(qs::QuoteStack, size::Float64; method::FillMethod = Average) :: Tuple{Quote, Bool}
-    quotesize = 0.0
-    totalprice = 0.0
-    size - quotesize
-
-    for qt in qs.laydepth
-        Match.@match method begin
-            Average         => (fill = min(qt.size,size - quotesize); quotesize += fill; totalprice += fill * qt.price)
-            Full            => quotesize == 0.0 && qt.size >= size ? (totalprice = qt.price * qt.size; quotesize = qt.size) : nothing
-        end
-    end
-    return (Quote(Back, quoteprice / quotesize, quotesize), quotesize == size)
-end
-
-
-pricetoback(qs::QuoteStack, size::Float64)
-pricetolay()
 
 function inplaytimeline(s::Session, e::FootballEvent)
     res = HTTP.request("GET", "https://ips.betfair.com/inplayservice/v1/eventTimeline?alt=json&eventId=$(e.id)&locale=en_GB&productType=EXCHANGE&regionCode=UK")
@@ -167,7 +138,7 @@ function inplaytimeline(s::Session, e::FootballEvent)
     )
 end
 
-function markets(event::Event, session::Session; refresh::Bool = false)
+function markets(session::Session, event::Event; refresh::Bool = false)
     if length(event._markets) == 0 || refresh
         params = Dict{String,Any}("filter" => Dict{String,Any}("eventIds" => [event.id]), "maxResults" => 1000)
         results = call(session, BettingAPI, "listMarketCatalogue", params)
@@ -179,7 +150,7 @@ function markets(event::Event, session::Session; refresh::Bool = false)
     return event._markets
 end
 
-function runners(market::Market{E}, session::Session; refresh::Bool = false) where {E <: Event}
+function runners(session::Session, market::Market{E}; refresh::Bool = false) where {E <: Event}
     if length(market._runners) == 0 || refresh
         params = Dict{String,Any}("filter" => Dict{String,Any}("marketIds" => [market.id]), "maxResults" => 1000, "marketProjection" => ["RUNNER_DESCRIPTION"])
         results = call(session, BettingAPI, "listMarketCatalogue", params)
@@ -193,13 +164,24 @@ function runners(market::Market{E}, session::Session; refresh::Bool = false) whe
     return market._runners
 end
 
-function marketdata(market::Market{E}, session::Session) where {E <: Event}
+function findevent(session::Session, name::String, eventtype::String)
+    eventtypeid = listeventtypes(session)[eventtype]
+    params = Dict{String,Any}("filter" => Dict{String,Any}("textQuery" => name, "eventTypeIds" => [eventtypeid]))
+    res = call(session, BettingAPI, "listEvents", params)
+    length(res) == 1 || error("Only expected one event with name $(name), found $(length(res))")
+    return Match.@match eventtype begin
+        "Football"  => FootballEvent(res[1]["event"]["name"], res[1]["event"]["id"], Dates.parse(Dates.DateTime, res[1]["event"]["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
+        _           => error("Don't know how to handl event type $(eventtype)")
+    end
+end
+
+function marketdata(session::Session, market::Market{E}) where {E <: Event}
     params = Dict{String,Any}("marketIds" => [market.id], "priceProjection" => Dict{String,Any}("priceData" => ["EX_ALL_OFFERS"]))
     results = call(session, BettingAPI, "listMarketBook", params)
     length(results) == 1 || error("Expected only one entry in market book for $(market.name), found $(length(results))")
     resbyrunner = reduce((x,y) -> (x[y["selectionId"]] = y; x), results[1]["runners"]; init=Dict{Int64,Any}())
     ret = Dict{Runner{E, Market{E}}, QuoteStack}()
-    for (name,runner) in runners(market, session)
+    for (name,runner) in runners(session, market)
         offers = resbyrunner[runner.id]["ex"]
         ret[runner] = QuoteStack(map(x -> Quote(Back, x["price"], x["size"]), offers["availableToBack"]), map(x -> Quote(Lay, x["price"], x["size"]), offers["availableToLay"]))
     end
@@ -212,16 +194,6 @@ getaccountstatement(s::Session) = call(s, AccountsAPI, "getAccountStatement", Di
 
 # Some specific overrides to standard terminology for
 const EVENT_TYPE_OVERRIDES = Dict{String, String}("Football" => "Soccer")
-
-Memoize.@memoize function listeventtypes(s::Session)
-    res = call(s, BettingAPI, "listEventTypes", Dict{String,Any}("filter" => Dict{String,Any}()))
-    types = Dict(map(x->x["eventType"]["name"], res) .=> map(x->x["eventType"]["id"], res))
-    for (k,v) in EVENT_TYPE_OVERRIDES
-        types[k] = types[v]
-    end
-
-    return types
-end
 
 function extendevent(event)
     return Dict("openDateTime" => Dates.parse(Dates.DateTime, event["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
