@@ -6,6 +6,7 @@ import Dates
 using Pkg.TOML
 import Memoize
 import Libz
+import Match
 
 abstract type API end
 struct BettingAPI <: API end
@@ -55,7 +56,7 @@ function call(s::Session, api::Type{T}, method::String, params::Dict{String, Any
     msg = Dict("jsonrpc" => "2.0", "method" => full_method(api, method), "id" => s.msgid, "params" => params)
     s.msgid += 1
     result = HTTP.request("POST", endpoint(api); headers=h, body=JSON.json(msg))
-    body = result.body |> ZlibInflateInputStream |> readline |> JSON.Parser.parse
+    body = result.body |> Libz.ZlibInflateInputStream |> readline |> JSON.Parser.parse
     !haskey(body, "error") || throw(error("Failed to call $(method) with code $(body["error"]["code"])"))
     return body["result"]
 end
@@ -86,6 +87,48 @@ function listEvents(s::Session, event::String)
     res = call(s, BettingAPI, "listEvents", Dict{String,Any}("filter" => Dict{String,Any}("eventTypeIds" => [eventtypes[event]])))
     events = Dict(map(x->x["event"]["id"], res) .=> map(x->merge(extendedEventType(x["event"]),x["event"]), res))
     return events
+end
+
+function listMarketCatalogue(s::Session, event::String)
+    params = Dict{String,Any}("filter" => Dict{String,Any}("eventIds" => [event]), "maxResults" => 1000)
+    return call(s, BettingAPI, "listMarketCatalogue", params)
+end
+
+function getEventMarkets(s::Session, eventId::String; pivot::Symbol = :name)
+    fields = ["MARKET_DESCRIPTION"]
+    params = Dict{String,Any}("filter" => Dict{String,Any}("eventIds" => [eventId]), "maxResults" => 1000, "marketProjection" => fields)
+    res = call(s, BettingAPI, "listMarketCatalogue", params)
+    pivotres = Match.@match pivot begin
+        :name   => reduce((x,y) -> (x[y["marketName"]] = y; x), res; init=Dict{String,Any}())
+        _       => error("Unknown pivot $(pivot) for event markets")
+    end
+
+    return pivotres
+end
+
+function getMarketRunners(s::Session, marketId::String, pivot::Symbol = :name)
+    fields = ["RUNNER_DESCRIPTION"]
+    params = Dict{String,Any}("filter" => Dict{String,Any}("marketIds" => [marketId]), "maxResults" => 1000, "marketProjection" => fields)
+    res = call(s, BettingAPI, "listMarketCatalogue", params)
+    length(res) == 1 || error("Expected exactly one entry in catalogue for $(event), found $(length(res))")
+    runners = res[1]["runners"]
+    pivotrunners = Match.@match pivot begin
+        :name   => reduce((x,y) -> (x[y["runnerName"]] = y; x), runners; init=Dict{String,Any}())
+        _       => error("Unknown pivot $(pivot) for event markets")
+    end
+    return pivotrunners
+end
+
+function getMarketBook(s::Session, marketId::String)
+    params = Dict{String,Any}("marketIds" => [marketId], "priceProjection" => Dict{String,Any}("priceData" => ["EX_ALL_OFFERS"]), "orderProjection" => "EXECUTABLE")
+    res = call(s, BettingAPI, "listMarketBook", params)
+    return res
+end
+
+function getRunnerBook(s::Session, marketId::String, runnerId::Int64)
+    params = Dict{String,Any}("marketId" => marketId, "selectionId" => runnerId)
+    res = call(s, BettingAPI, "listRunnerBook", params)
+    return res
 end
 
 function listCurrentOrders(s::Session; requestinc = 1000)
