@@ -88,12 +88,19 @@ mutable struct Market{E <: Event} <: AbstractMarket{E}
     Market(name::String, id::String, event::E) where {E <: Event} = new{E}(name, id, event, Dict{String,Runner{E, Market{E}}}())
 end
 
+struct Competition
+    name::String
+    id::String
+    region::String
+end
+
 mutable struct FootballEvent <: Event
     name::String
     id::String
+    competition::Competition
     _markets::Dict{String,Market{FootballEvent}}
     starttime::Dates.DateTime
-    FootballEvent(name::String, id::String, starttime::Dates.DateTime) = new(name, id, Dict{String,Market{FootballEvent}}(), starttime)
+    FootballEvent(name::String, id::String, comp::Competition, starttime::Dates.DateTime) = new(name, id, comp, Dict{String,Market{FootballEvent}}(), starttime)
 end
 
 @enum Side begin
@@ -117,7 +124,7 @@ bestlay(qs::QuoteStack) :: Union{Nothing,Quote} = length(qs.laydepth) > 0 ? qs.l
 
 Memoize.@memoize function listeventtypes(s::Session)
     res = call(s, BettingAPI, "listEventTypes", Dict{String,Any}("filter" => Dict{String,Any}()))
-    types = Dict(map(x->x["eventType"]["name"], res) .=> map(x->x["eventType"]["id"], res))
+    types = Dict(map(x->Symbol(lowercase(x["eventType"]["name"])), res) .=> map(x->x["eventType"]["id"], res))
     for (k,v) in EVENT_TYPE_OVERRIDES
         types[k] = types[v]
     end
@@ -164,14 +171,20 @@ function runners(session::Session, market::Market{E}; refresh::Bool = false) whe
     return market._runners
 end
 
-function findevent(session::Session, name::String, eventtype::String)
+
+function findevent(session::Session, name::String, eventtype::Symbol)
     eventtypeid = listeventtypes(session)[eventtype]
     params = Dict{String,Any}("filter" => Dict{String,Any}("textQuery" => name, "eventTypeIds" => [eventtypeid]))
     res = call(session, BettingAPI, "listEvents", params)
     length(res) == 1 || error("Only expected one event with name $(name), found $(length(res))")
     return Match.@match eventtype begin
-        "Football"  => FootballEvent(res[1]["event"]["name"], res[1]["event"]["id"], Dates.parse(Dates.DateTime, res[1]["event"]["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
-        _           => error("Don't know how to handl event type $(eventtype)")
+        :football || :soccer  => begin
+            compparams = Dict{String,Any}("filter" => Dict{String,Any}("eventIds" => [res[1]["event"]["id"]]))
+            compinfo = call(session, BettingAPI, "listCompetitions", compparams)[1]
+            comp = Competition(compinfo["competition"]["name"], compinfo["competition"]["id"], compinfo["competitionRegion"])
+            FootballEvent(res[1]["event"]["name"], res[1]["event"]["id"], comp, Dates.parse(Dates.DateTime, res[1]["event"]["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
+        end
+        _                       => error("Don't know how to handl event type $(eventtype)")
     end
 end
 
@@ -193,7 +206,7 @@ getaccountdetails(s::Session) = call(s, AccountsAPI, "getAccountDetails", Dict{S
 getaccountstatement(s::Session) = call(s, AccountsAPI, "getAccountStatement", Dict{String,Any}())
 
 # Some specific overrides to standard terminology for
-const EVENT_TYPE_OVERRIDES = Dict{String, String}("Football" => "Soccer")
+const EVENT_TYPE_OVERRIDES = Dict{Symbol, Symbol}(:football => :soccer)
 
 function extendevent(event)
     return Dict("openDateTime" => Dates.parse(Dates.DateTime, event["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
