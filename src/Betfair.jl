@@ -103,6 +103,15 @@ mutable struct FootballEvent <: Event
     FootballEvent(name::String, id::String, comp::Competition, starttime::Dates.DateTime) = new(name, id, comp, Dict{String,Market{FootballEvent}}(), starttime)
 end
 
+mutable struct TennisEvent <: Event
+    name::String
+    id::String
+    competition::Competition
+    _markets::Dict{String,Market{TennisEvent}}
+    starttime::Dates.DateTime
+    TennisEvent(name::String, id::String, comp::Competition, starttime::Dates.DateTime) = new(name, id, comp, Dict{String,Market{TennisEvent}}(), starttime)
+end
+
 @enum Side begin
     Back = 1
     Lay = -1
@@ -184,7 +193,13 @@ function findevent(session::Session, name::String, eventtype::Symbol)
             comp = Competition(compinfo["competition"]["name"], compinfo["competition"]["id"], compinfo["competitionRegion"])
             FootballEvent(res[1]["event"]["name"], res[1]["event"]["id"], comp, Dates.parse(Dates.DateTime, res[1]["event"]["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
         end
-        _                       => error("Don't know how to handl event type $(eventtype)")
+        :tennis  => begin
+            compparams = Dict{String,Any}("filter" => Dict{String,Any}("eventIds" => [res[1]["event"]["id"]]))
+            compinfo = call(session, BettingAPI, "listCompetitions", compparams)[1]
+            comp = Competition(compinfo["competition"]["name"], compinfo["competition"]["id"], compinfo["competitionRegion"])
+            TennisEvent(res[1]["event"]["name"], res[1]["event"]["id"], comp, Dates.parse(Dates.DateTime, res[1]["event"]["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")))
+        end
+        _                       => error("Don't know how to handle event type $(eventtype)")
     end
 end
 
