@@ -4,10 +4,13 @@ authors = ["Iain Skett <iain.skett@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+LRUCache = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
 Libz = "2ec943e9-cfe8-584d-b93d-64dcb6d567b7"
 Match = "7eb4fadd-790c-5f42-8a69-bfa0b872bfbf"
 Memoize = "c03570c3-d221-55d1-a50c-7939bbd78826"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+Reactive = "a223df75-4e93-5b7c-acf9-bdd599c0f4de"

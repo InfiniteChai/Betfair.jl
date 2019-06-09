@@ -2,6 +2,5 @@
 *.jl.*.cov
 *.jl.mem
 deps/deps.jl
-keys
-/Manifest.toml
 cfg
+keys
