@@ -1,8 +1,3 @@
-@enum Side begin
-    Back = 1
-    Lay = -1
-end
-
 struct Quote
     side::Side
     price::Float64

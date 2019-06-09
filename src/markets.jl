@@ -26,11 +26,6 @@ struct Team
     name::String
 end
 
-@enum TeamSide
-    Home = 1
-    Away = -1
-end
-
 abstract type Event end
 mutable struct FootballEvent <: Event
     key::EventKey

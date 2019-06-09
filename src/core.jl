@@ -4,6 +4,13 @@ import Libz
 import LRUCache
 using Pkg.TOML
 
+@enum Side begin
+    Back = 1
+    Lay = -1
+end
+
+name(side::Side) = uppercase(String(Symbol(side)))
+
 abstract type API end
 struct BettingAPI <: API end
 full_method(::Type{BettingAPI}, method::String) = "SportsAPING/v1.0/$(method)"
@@ -64,6 +71,6 @@ function call(s::Session, api::Type{T}, method::String, params) where {T <: API}
     s.msgid += 1
     result = HTTP.request("POST", endpoint(api); headers=h, body=JSON.json(msg))
     body = result.body |> Libz.ZlibInflateInputStream |> readline |> JSON.Parser.parse
-    !haskey(body, "error") || throw(error("Failed to call $(method) with code $(body["error"]["code"])"))
+    !haskey(body, "error") || throw(error("Failed to call $(method) with error $(body["error"])"))
     return body["result"]
 end
