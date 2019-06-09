@@ -26,6 +26,11 @@ struct Team
     name::String
 end
 
+@enum TeamSide
+    Home = 1
+    Away = -1
+end
+
 abstract type Event end
 mutable struct FootballEvent <: Event
     key::EventKey
@@ -35,6 +40,19 @@ mutable struct FootballEvent <: Event
     _markets::Union{Nothing,Vector{MarketKey}}
     starttime::Dates.DateTime
     function FootballEvent(key::EventKey, name::String, starttime::Dates.DateTime)
+        (home, away) = split(name, " v ")
+        new(key, Team(home), Team(away), nothing, nothing, starttime)
+    end
+end
+
+mutable struct CricketEvent <: Event
+    key::EventKey
+    hometeam::Team
+    awayteam::Team
+    _competition::Union{Nothing,CompetitionKey}
+    _markets::Union{Nothing,Vector{MarketKey}}
+    starttime::Dates.DateTime
+    function CricketEvent(key::EventKey, name::String, starttime::Dates.DateTime)
         (home, away) = split(name, " v ")
         new(key, Team(home), Team(away), nothing, nothing, starttime)
     end
@@ -73,6 +91,10 @@ function parseevent(event, eventtype::Symbol)
         :football || :soccer => begin
             starttime = Dates.parse(Dates.DateTime, event["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ"))
             FootballEvent(EventKey(event["id"]), event["name"], starttime)
+        end
+        :cricket => begin
+            starttime = Dates.parse(Dates.DateTime, event["openDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ"))
+            CricketEvent(EventKey(event["id"]), event["name"], starttime)
         end
         _ => error("Unable to handle event type $(eventtype)")
     end
