@@ -22,14 +22,20 @@ endpoint(::Type{AccountsAPI}) = "https://api.betfair.com/exchange/account/json-r
 
 abstract type Key end
 
+struct OrderKey <: Key
+    id::String
+end
+
+abstract type Order end
+
 mutable struct Session
     msgid::Int32
     token::Union{Nothing,String}
     appid::String
     cache::LRUCache.LRU{Key,Any}
     eventtypes::Union{Nothing,Dict{Symbol,String}}
-
-    Session(appid::String) = new(0, nothing, appid, LRUCache.LRU{Key,Any}(1000), nothing)
+    orders::Dict{OrderKey,Order}
+    Session(appid::String) = new(0, nothing, appid, LRUCache.LRU{Key,Any}(1000), nothing, Dict())
 end
 
 function headers(s::Session; accept = "application/json", content = "application/json") :: Dict{String, String}
