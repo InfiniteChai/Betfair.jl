@@ -29,6 +29,7 @@ end
 abstract type Event end
 mutable struct FootballEvent <: Event
     key::EventKey
+    name::String
     hometeam::Team
     awayteam::Team
     _competition::Union{Nothing,CompetitionKey}
@@ -36,12 +37,13 @@ mutable struct FootballEvent <: Event
     starttime::Dates.DateTime
     function FootballEvent(key::EventKey, name::String, starttime::Dates.DateTime)
         (home, away) = split(name, " v ")
-        new(key, Team(home), Team(away), nothing, nothing, starttime)
+        new(key, name, Team(home), Team(away), nothing, nothing, starttime)
     end
 end
 
 mutable struct CricketEvent <: Event
     key::EventKey
+    name::String
     hometeam::Team
     awayteam::Team
     _competition::Union{Nothing,CompetitionKey}
@@ -49,7 +51,7 @@ mutable struct CricketEvent <: Event
     starttime::Dates.DateTime
     function CricketEvent(key::EventKey, name::String, starttime::Dates.DateTime)
         (home, away) = split(name, " v ")
-        new(key, Team(home), Team(away), nothing, nothing, starttime)
+        new(key, name, Team(home), Team(away), nothing, nothing, starttime)
     end
 end
 

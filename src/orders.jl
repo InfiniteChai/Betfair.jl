@@ -126,6 +126,7 @@ function refreshorders(s::Session, key::MarketKey)
         moreavailable = res["moreAvailable"]
         for defn in res["currentOrders"]
             order = get!(s.orders, OrderKey(defn["betId"])) do
+                # TODO: More accurately track the type of order.
                 order = LimitOrder(
                     MarketKey(defn["marketId"]),
                     RunnerKey(defn["selectionId"]),
