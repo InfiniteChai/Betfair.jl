@@ -18,7 +18,7 @@ end
 bestback(book::RunBook)::Union{Quote,Nothing} = length(book.backdepth) > 0 ? book.backdepth[1] : nothing
 bestlay(book::RunBook)::Union{Quote,Nothing} = length(book.laydepth) > 0 ? book.laydepth[1] : nothing
 
-marketbooks(s::Session, keys::Vector{MarketKey}) = marketbooks(s, map(key -> market(s, k), keys))
+marketbooks(s::Session, keys::Vector{MarketKey}) = marketbooks(s, map(k -> market(s, k), keys))
 function marketbooks(s::Session, mkts::Vector{Market})
     # TODO: Add handling to split into multiple requests
     params = Dict(
