@@ -32,7 +32,7 @@ function marketbooks(s::Session, mkts::Vector{Market})
     length(results) == length(mkts) || error("Expected $(length(mkts)) results, but got $(length(results))")
     mbs = []
     for result in results
-        market = market(s, MarketKey(result["marketId"]))
+        market = Betfair.market(s, Betfair.MarketKey(result["marketId"]))
         rs = runners(s, market)
         runbooks = Dict()
         for runbook in marketbook["runners"]
