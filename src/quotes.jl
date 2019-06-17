@@ -1,12 +1,20 @@
+import StaticArrays
+
 struct Quote
     side::Side
     price::Float64
     size::Float64
 end
 
-struct RunBook
-    backdepth::Vector{Quote}
-    laydepth::Vector{Quote}
+struct RunBook{S,T}
+    backdepth::StaticArrays.SVector{S,Quote}
+    laydepth::StaticArrays.SVector{T,Quote}
+
+    function RunBook(backs::Vector{S}, lays::Vector{T}) where {S,T}
+        bl = length(backs)
+        ll = length(lays)
+        new{bl,ll}(StaticArrays.SVector{bl,Quote}(backs), StaticArrays.SVector{ll,Quote}(lays))
+    end
 end
 
 struct MarketBook
@@ -31,7 +39,7 @@ function marketbooks(s::Session, mkts::Vector{Market})
     results = call(s, BettingAPI, "listMarketBook", params)
     length(results) == length(mkts) || error("Expected $(length(mkts)) results, but got $(length(results))")
     mbs = []
-    for result in results
+    for marketbook in results
         market = Betfair.market(s, Betfair.MarketKey(result["marketId"]))
         rs = runners(s, market)
         runbooks = Dict()
