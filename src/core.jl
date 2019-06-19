@@ -3,10 +3,28 @@ import JSON
 import Libz
 import LRUCache
 using Pkg.TOML
+import Match
 
 @enum Side begin
     Back = 1
     Lay = -1
+end
+
+@enum MarketStatus begin
+    MarketInactive = 1
+    MarketOpen = 2
+    MarketSuspended = 3
+    MarketClosed = 4
+end
+
+function MarketStatus(status::String)
+    Match.@match status begin
+        "INACTIVE"  => MarketInactive
+        "OPEN"      => MarketOpen
+        "SUSPENDED" => MarketSuspended
+        "CLOSED"    => MarketClosed
+        _           => error("Unknown market status $(status)")
+    end
 end
 
 name(side::Side) = uppercase(String(Symbol(side)))

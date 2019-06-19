@@ -6,6 +6,8 @@ struct Quote
     size::Float64
 end
 
+#TODO: Remodel the runbook so it appropriately orders the quotes.
+
 struct RunBook{S,T}
     backdepth::StaticArrays.SVector{S,Quote}
     laydepth::StaticArrays.SVector{T,Quote}
@@ -19,6 +21,7 @@ end
 
 struct MarketBook
     market::MarketKey
+    status::MarketStatus
     inplay::Bool
     runbooks::Dict{RunnerKey, RunBook}
 end
@@ -33,14 +36,15 @@ function marketbooks(s::Session, mkts::Vector{Market})
         "marketIds" => map(m -> m.key, mkts),
         "priceProjection" => Dict(
             "priceData" => [ "EX_ALL_OFFERS" ]
-        )
+        ),
+        "orderProjection" => "ALL",
     )
 
     results = call(s, BettingAPI, "listMarketBook", params)
     length(results) == length(mkts) || error("Expected $(length(mkts)) results, but got $(length(results))")
     mbs = []
     for marketbook in results
-        market = Betfair.market(s, Betfair.MarketKey(result["marketId"]))
+        market = Betfair.market(s, Betfair.MarketKey(marketbook["marketId"]))
         rs = runners(s, market)
         runbooks = Dict()
         for runbook in marketbook["runners"]
@@ -50,34 +54,17 @@ function marketbooks(s::Session, mkts::Vector{Market})
                 map(x -> Quote(Lay, x["price"], x["size"]), runbook["ex"]["availableToLay"])
             )
         end
-
-        push!(mbs, MarketBook(market.key, marketbook["inplay"], runbooks))
+        mb = MarketBook(
+            market.key,
+            MarketStatus(marketbook["status"]),
+            marketbook["inplay"],
+            runbooks
+        )
+        push!(mbs, mb)
     end
 
     return mbs
 end
 
 marketbook(s::Session, key::MarketKey) = marketbook(s, market(s, key))
-function marketbook(s::Session, market::Market)
-    params = Dict(
-        "marketIds" => [market.key.id],
-        "priceProjection" => Dict(
-            "priceData" => [ "EX_ALL_OFFERS" ]
-        )
-    )
-
-    results = call(s, BettingAPI, "listMarketBook", params)
-    length(results) == 1 || error("Expected one market book result for $(market.key.id)")
-    marketbook = results[1]
-    rs = runners(s, market)
-    runbooks = Dict()
-    for runbook in marketbook["runners"]
-        runner = rs[RunnerKey(runbook["selectionId"])]
-        runbooks[runner.key] = RunBook(
-            map(x -> Quote(Back, x["price"], x["size"]), runbook["ex"]["availableToBack"]),
-            map(x -> Quote(Lay, x["price"], x["size"]), runbook["ex"]["availableToLay"])
-        )
-    end
-
-    MarketBook(market.key, marketbook["inplay"], runbooks)
-end
+marketbook(s::Session, market::Market) = marketbooks(s, [market])[1]
