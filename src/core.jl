@@ -44,7 +44,7 @@ struct OrderKey <: Key
     id::String
 end
 
-abstract type Order end
+abstract type AbstractOrder end
 
 mutable struct Session
     msgid::Int32
@@ -52,7 +52,7 @@ mutable struct Session
     appid::String
     cache::LRUCache.LRU{Key,Any}
     eventtypes::Union{Nothing,Dict{Symbol,String}}
-    orders::Dict{OrderKey,Order}
+    orders::Dict{OrderKey,AbstractOrder}
     Session(appid::String) = new(0, nothing, appid, LRUCache.LRU{Key,Any}(1000), nothing, Dict())
 end
 

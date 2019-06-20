@@ -12,7 +12,7 @@ orderstatus(key::String) = orderstatus(Symbol(lowercase(key)))
 
 abstract type OrderInstruction end
 
-struct Order{OI<:OrderInstruction}
+struct Order{OI<:OrderInstruction} <: AbstractOrder
     id::OrderKey
     market::MarketKey
     runner::RunnerKey
@@ -21,7 +21,6 @@ struct Order{OI<:OrderInstruction}
     sizematched::Float64
     pricematched::Float64
     strategyref::Union{Nothing,String}
-
     instruction::OI
 end
 
