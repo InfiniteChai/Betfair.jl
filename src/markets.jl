@@ -27,6 +27,7 @@ struct Team
 end
 
 abstract type Event end
+
 mutable struct FootballEvent <: Event
     key::EventKey
     name::String

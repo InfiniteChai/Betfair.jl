@@ -6,80 +6,86 @@
     Cancelled = 5
 end
 
-mutable struct OrderState
-    status::OrderStatus
-    id::Union{Nothing,OrderKey}
-    sizematched::Float64
-    pricematched::Float64
-    placedat::Union{Nothing,Dates.DateTime}
-
-    OrderState() = new(Pending, nothing, 0.0, 0.0, nothing)
-    OrderState(status::OrderStatus, id::OrderKey, sizematched::Float64, pricematched::Float64, placedat::Dates.DateTime) =
-        new(status, id, sizematched, pricematched, placedat)
-end
-
 const OrderStatusMap = Dict(zip(map(Symbol∘lowercase∘String∘Symbol, instances(OrderStatus)), instances(OrderStatus)))
 orderstatus(key::Symbol) = OrderStatusMap[key]
 orderstatus(key::String) = orderstatus(Symbol(lowercase(key)))
 
-marketkey(o::Order) = error("marketkey not implemented by $(typeof(o))")
-instruction(o::Order) = error("instruction not implemented by $(typeof(o))")
-state(o::Order) = error("state not implemented by $(typeof(o))")
+abstract type OrderInstruction end
 
-struct LimitOrder <: Order
-    marketkey::MarketKey
-    runnerkey::RunnerKey
-    side::Side
-    size::Float64
-    price::Float64
+struct Order{OI<:OrderInstruction}
+    id::OrderKey
+    market::MarketKey
+    runner::RunnerKey
+    status::OrderStatus
+    placedat::Dates.DateTime
+    sizematched::Float64
+    pricematched::Float64
+    strategyref::Union{Nothing,String}
 
-    state::OrderState
-
-    LimitOrder(marketkey::MarketKey, runnerkey::RunnerKey, side::Side, size::Float64, price::Float64) =
-        new(marketkey, runnerkey, side, size, price, OrderState())
+    instruction::OI
 end
 
-marketkey(o::LimitOrder) = o.marketkey
-state(o::LimitOrder) = o.state
-function instruction(o::LimitOrder)
+
+abstract type PriceInstruction end
+struct FixedPrice <: PriceInstruction
+    price::Float64
+end
+struct AtMarketPrice <: PriceInstruction
+end
+
+struct LimitOrderInstruction{PI<:PriceInstruction} <: OrderInstruction
+    market::MarketKey
+    runner::RunnerKey
+    side::Side
+    size::Float64
+    priceinstruction::PI
+end
+
+price(o::LimitOrderInstruction{FixedPrice}) = o.priceinstruction.price
+price(o::LimitOrderInstruction{AtMarketPrice}) = if o.side == Back 1 else 1000 end
+marketkey(o::LimitOrderInstruction{<:PriceInstruction}) = o.market
+runnerkey(o::LimitOrderInstruction{<:PriceInstruction}) = o.runner
+
+function instruction(o::LimitOrderInstruction{<:PriceInstruction})
     Dict(
         "orderType" => "LIMIT",
-        "selectionId" => o.runnerkey.id,
+        "selectionId" => o.runner.id,
         "side" => name(o.side),
         "limitOrder" => Dict(
             "size" => o.size,
-            "price" => o.price,
+            "price" => price(o),
             "persistenceType" => "PERSIST"
         )
     )
 end
 
-struct FillOrKillOrder <: Order
-    marketkey::MarketKey
-    runnerkey::RunnerKey
+struct FillOrKillOrderInstruction{PI<:PriceInstruction} <: OrderInstruction
+    market::MarketKey
+    runner::RunnerKey
     side::Side
     size::Float64
-    price::Float64
+    price::PI
     minsize::Float64
 
-    state::OrderState
-
-    FillOrKillOrder(marketkey::MarketKey, runnerkey::RunnerKey, side::Side, size::Float64, price::Float64) =
-        new(marketkey, runnerkey, side, size, price, size, OrderState())
-
-    FillOrKillOrder(marketkey::MarketKey, runnerkey::RunnerKey, side::Side, size::Float64, price::Float64, minsize::Float64) =
-        new(marketkey, runnerkey, side, size, price, minsize, OrderState())
+    FillOrKillOrderInstruction(market::MarketKey, runner::RunnerKey, side::Side, size::Float64, price::PI) where {PI<:PriceInstruction} =
+        new{PI}(market, runner, side, size, price, size)
+    FillOrKillOrderInstruction(market::MarketKey, runner::RunnerKey, side::Side, size::Float64, price::PI, minsize::Float64) where {PI<:PriceInstruction} =
+        new{PI}(market, runner, side, size, price, size, minsize)
 end
-marketkey(o::FillOrKillOrder) = o.marketkey
-state(o::FillOrKillOrder) = o.state
-function instruction(o::FillOrKillOrder)
+
+price(o::FillOrKillOrderInstruction{FixedPrice}) = o.priceinstruction.price
+price(o::FillOrKillOrderInstruction{AtMarketPrice}) = if o.side == Back 1 else 1000 end
+marketkey(o::FillOrKillOrderInstruction{<:PriceInstruction}) = o.market
+runnerkey(o::FillOrKillOrderInstruction{<:PriceInstruction}) = o.runner
+
+function instruction(o::FillOrKillOrderInstruction{<:PriceInstruction})
     Dict(
         "orderType" => "LIMIT",
-        "selectionId" => o.runnerkey.id,
+        "selectionId" => o.runner.id,
         "side" => name(o.side),
         "limitOrder" => Dict(
             "size" => o.size,
-            "price" => o.price,
+            "price" => price(o),
             "persistenceType" => "PERSIST",
             "timeInForce" => "FILL_OR_KILL",
             "minSize" => o.minsize
@@ -87,37 +93,44 @@ function instruction(o::FillOrKillOrder)
     )
 end
 
-function place(s::Session, order::O) where {O<:Order}
-    state = Betfair.state(order)
-    state.id === nothing || error("Order $(state.id.id) has already been placed")
-
+function place(s::Session, order::OI; ref = nothing) where {OI<:OrderInstruction}
     params = Dict(
         "marketId" => marketkey(order).id,
         "instructions" => [instruction(order)]
     )
+
+    if ref !== nothing
+        length(ref) <= 15 || error("Strategy reference '$(ref)' is too long")
+        params["customerStrategyRef"] = ref
+    end
+
     res = call(s, BettingAPI, "placeOrders", params)
-    res["status"] == "SUCCESS" || error("failed to place order $(o) with status $(res["status"])")
+    res["status"] == "SUCCESS" || error("failed to place order instruction $(order) with status $(res["status"])")
     length(res["instructionReports"]) == 1 || error("Unexpected number of instruction reports returned")
     rpt = res["instructionReports"][1]
 
-    state.status = orderstatus(rpt["orderStatus"])
-    state.id = OrderKey(rpt["betId"])
-    state.sizematched = rpt["sizeMatched"]
-    state.pricematched = rpt["averagePriceMatched"]
-    state.placedat = Dates.parse(Dates.DateTime, rpt["placedDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ"))
+    order = Order(
+        OrderKey(rpt["betId"]),
+        marketkey(order),
+        runnerkey(order),
+        orderstatus(rpt["OrderStatus"]),
+        Dates.parse(Dates.DateTime, event["placedDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")),
+        rpt["sizeMatched"],
+        rpt["averagePriceMatched"],
+        ref,
+        order
+    )
 
-    s.orders[state.id] = order
-    order
+    s.orders[order.id] = order
 end
 
-refreshorders(s::Session, market::Market) = refreshorders(s, market.key)
-function refreshorders(s::Session, key::MarketKey)
+function refreshorders(s::Betfair.Session)
     params = Dict(
-        "marketIds" => [key.id],
         "orderProjection" => "ALL",
         "fromRecord" => 0,
         "recordCount" => 1000
     )
+
     moreavailable = true
     orders = []
     while moreavailable
@@ -125,41 +138,47 @@ function refreshorders(s::Session, key::MarketKey)
         params["fromRecord"] += 1000
         moreavailable = res["moreAvailable"]
         for defn in res["currentOrders"]
-            order = get!(s.orders, OrderKey(defn["betId"])) do
-                # TODO: More accurately track the type of order.
-                order = LimitOrder(
-                    MarketKey(defn["marketId"]),
-                    RunnerKey(defn["selectionId"]),
-                    if defn["side"] == "BACK" Back else Lay end,
-                    defn["priceSize"]["size"],
-                    defn["priceSize"]["price"]
-                )
-                Betfair.state(order).id = OrderKey(defn["betId"])
-            end
-
-            state = Betfair.state(order)
-            state.status = orderstatus(defn["status"])
-            state.sizematched = defn["sizeMatched"]
-            state.pricematched = defn["averagePriceMatched"]
-            state.placedat = Dates.parse(Dates.DateTime, defn["placedDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ"))
-
-            push!(orders, order)
+            order = s.orders[OrderKey(defn["betId"])]
+            neworder = Order(
+                order.id,
+                order.market,
+                order.runner,
+                orderstatus(defn["status"]),
+                order.placedat,
+                defn["sizeMatched"],
+                defn["averagePriceMatched"],
+                order.strategyref,
+                order.instruction
+            )
+            s.orders[OrderKey(defn["betId"])] = neworder
+            push!(orders, neworder)
         end
     end
 
     orders
 end
 
-function cancel(s::Session, o::O) where {O<:Order}
-    state = Betfair.state(o)
-    state.status == Executable || error("Can only cancel an executable order")
+function cancel(s::Session, order::Order)
+    order.status == Executable || error("Can only cancel an executable order")
 
     params = Dict(
-        "marketId" => marketkey(o).id,
-        "instructions" => [Dict("betId" => state.id.id)]
+        "marketId" => order.market.id,
+        "instructions" => [Dict("betId" => order.id.id)]
     )
     res = call(s, BettingAPI, "cancelOrders", params)
     # TODO: Check that we've actually succeeded and that we've cancelled all outstanding
-    state.status = Cancelled
-    o
+
+    neworder = Order(
+        order.id,
+        order.market,
+        order.runner,
+        Cancelled,
+        order.placedat,
+        order.sizematched,
+        order.pricematched,
+        order.strategyref,
+        order.instruction
+    )
+
+    s.orders[order.key] = neworder
 end
