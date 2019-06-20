@@ -109,11 +109,11 @@ function place(s::Session, order::OI; ref = nothing) where {OI<:OrderInstruction
     length(res["instructionReports"]) == 1 || error("Unexpected number of instruction reports returned")
     rpt = res["instructionReports"][1]
 
-    order = Order(
+    actualorder = Order(
         OrderKey(rpt["betId"]),
         marketkey(order),
         runnerkey(order),
-        orderstatus(rpt["OrderStatus"]),
+        orderstatus(rpt["orderStatus"]),
         Dates.parse(Dates.DateTime, event["placedDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")),
         rpt["sizeMatched"],
         rpt["averagePriceMatched"],
@@ -121,7 +121,7 @@ function place(s::Session, order::OI; ref = nothing) where {OI<:OrderInstruction
         order
     )
 
-    s.orders[order.id] = order
+    s.orders[actualorder.id] = actualorder
 end
 
 function refreshorders(s::Betfair.Session)
