@@ -179,5 +179,5 @@ function cancel(s::Session, order::Order)
         order.instruction
     )
 
-    s.orders[order.key] = neworder
+    s.orders[order.id] = neworder
 end
