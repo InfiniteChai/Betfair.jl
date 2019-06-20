@@ -113,7 +113,7 @@ function place(s::Session, order::OI; ref = nothing) where {OI<:OrderInstruction
         marketkey(order),
         runnerkey(order),
         orderstatus(rpt["orderStatus"]),
-        Dates.parse(Dates.DateTime, event["placedDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")),
+        Dates.parse(Dates.DateTime, rpt["placedDate"], Dates.DateFormat("yyyy-mm-dd\\THH:MM:SS.sZ")),
         rpt["sizeMatched"],
         rpt["averagePriceMatched"],
         ref,
