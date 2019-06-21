@@ -123,6 +123,11 @@ function place(s::Session, order::OI; ref = nothing) where {OI<:OrderInstruction
     s.orders[actualorder.id] = actualorder
 end
 
+# We need to add handling to pick up EXECUTABLE or EXECUTION_COMPLETE when
+# they weren't submitted from this session.
+
+# Also refresh should clean up any orders in
+
 function refreshorders(s::Betfair.Session)
     params = Dict(
         "orderProjection" => "ALL",
