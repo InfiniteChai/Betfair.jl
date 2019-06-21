@@ -192,10 +192,10 @@ function runnersbyname(s::Session, market::Market)
     Dict(zip(map(r -> r.name, rs), rs))
 end
 
-marketrunner(s::Session, event::EventKey, marketname::String, runnername::String) =
-    marketruner(s, event(s, event), marketname, runnername)
-function marketruner(s::Session, event::Event, marketname::String, runnername::String)
+marketrunner(s::Session, key::EventKey, marketname::String, runnername::String) =
+    marketrunner(s, event(s, key), marketname, runnername)
+function marketrunner(s::Session, event::Event, marketname::String, runnername::String)
     market = marketsbyname(s, event)[marketname]
     runner = runnersbyname(s, market)[runnername]
     return market, runner
-end
+en
