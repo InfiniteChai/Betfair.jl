@@ -198,4 +198,4 @@ function marketrunner(s::Session, event::Event, marketname::String, runnername::
     market = marketsbyname(s, event)[marketname]
     runner = runnersbyname(s, market)[runnername]
     return market, runner
-en
+end
